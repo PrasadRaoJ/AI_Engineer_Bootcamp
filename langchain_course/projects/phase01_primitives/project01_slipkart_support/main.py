@@ -30,11 +30,11 @@ def run(user_input: str) -> None:
     response = llm_with_tools.invoke(history)
 
     if response.tool_calls:
+        history.append(response)                                    # AIMessage added ONCE
         for tc in response.tool_calls:
             print(f"[Tool] {tc['name']}({tc['args']})")
             result = TOOL_MAP[tc["name"]].invoke(tc["args"])
             print(f"[Result] {result}")
-            history.append(response)
             history.append(ToolMessage(result, tool_call_id=tc["id"]))
 
     # step 3 — stream final reply

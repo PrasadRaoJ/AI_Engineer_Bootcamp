@@ -87,4 +87,4 @@ for chunk in llm.stream(messages):
 - Each chunk is an `AIMessageChunk`, not a full `AIMessage` — `.content` may be an empty string `""` on the first/last chunk.
 - `flush=True` is required to print tokens immediately — without it, Python buffers the output and defeats the purpose.
 - **`.stream()`** is blocking — use **`.astream()`** in async contexts (FastAPI, etc.).
-- Don't use streaming with `.with_structured_output()` — you need the complete JSON before it can be parsed.
+- Avoid combining streaming with `.with_structured_output()` for now — partial objects are hard to work with. LangChain does support it via partial object accumulation, but skip it until Phase 5+.

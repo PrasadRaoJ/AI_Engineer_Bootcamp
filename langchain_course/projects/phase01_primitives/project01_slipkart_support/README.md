@@ -28,7 +28,8 @@ A customer support agent for Slipkart. Takes a customer's complaint, classifies 
              ▼
 ┌─────────────────────────┐
 │  STEP 1 — Classify      │  SupportTicket: order_id, issue, priority, action_needed
-│  (structured output)    │  tells us WHAT to do before calling any tool
+│  (structured output)    │  extracts structured metadata for logging/observability
+│                         │  Note: action_needed is logged only; Step 2 decides tool independently
 └────────────┬────────────┘
              │
              ▼

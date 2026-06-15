@@ -91,7 +91,7 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0)
 from langchain_anthropic import ChatAnthropic
 
 llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0)
-# change: model name — "claude-sonnet-4-6" / "claude-haiku-4-5-20251001" / "claude-opus-4-8"
+# change: model name — "claude-sonnet-4-6" / "claude-haiku-4-5-20251001" / "claude-opus-4-5"
 # needs: ANTHROPIC_API_KEY in .env
 ```
 

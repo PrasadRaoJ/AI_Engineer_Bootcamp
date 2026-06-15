@@ -23,6 +23,7 @@ def cancel_order(order_id: str) -> str:
 
 # --- bind tools to model ---
 llm_with_tools = llm.bind_tools([get_order_status, cancel_order])
+TOOL_MAP = {t.name: t for t in [get_order_status, cancel_order]}  # name → function lookup
 
 # --- tool-calling loop ---
 # FLOW:
@@ -41,11 +42,11 @@ messages = [
 response = llm_with_tools.invoke(messages)  # step 2: model returns tool_call
 
 if response.tool_calls:
+    messages.append(response)                                          # step 4a: AIMessage added ONCE
     for tc in response.tool_calls:
         print(f"tool called: {tc['name']} with args {tc['args']}")
-        result = locals()[tc["name"]].invoke(tc["args"])  # step 3: run the function
-        messages.append(response)                          # step 4a: add AIMessage (has tool_call)
-        messages.append(ToolMessage(result, tool_call_id=tc["id"]))  # step 4b: add tool result
+        result = TOOL_MAP[tc["name"]].invoke(tc["args"])               # step 3: run via TOOL_MAP
+        messages.append(ToolMessage(result, tool_call_id=tc["id"]))    # step 4b: add tool result
 
     final = llm_with_tools.invoke(messages)  # step 5: model gives final answer
     print("\nAI:", final.content)

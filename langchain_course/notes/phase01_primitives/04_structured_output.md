@@ -14,7 +14,7 @@ By default the LLM returns free text. **Structured output** forces the model to 
              │  llm.with_structured_output(Schema)
              ▼
 ┌──────────────────────────┐
-│  2. Bind schema to LLM   │  LangChain injects schema as a tool internally
+│  2. Bind schema to LLM   │  LangChain uses provider's native method (tool injection for OpenAI/Anthropic, format= for Ollama)
 └────────────┬─────────────┘
              │
              │  .invoke([SystemMessage, HumanMessage])

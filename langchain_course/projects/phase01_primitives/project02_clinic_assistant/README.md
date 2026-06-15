@@ -28,7 +28,8 @@ A clinic receptionist agent for Yapollo Clinic, Nellore. Takes a patient's natur
              ▼
 ┌─────────────────────────┐
 │  STEP 1 — Classify      │  AppointmentRequest: patient_name, reason, urgency, action_needed
-│  (structured output)    │  tells us WHAT to do before calling any tool
+│  (structured output)    │  extracts structured metadata for logging/observability
+│                         │  Note: action_needed is logged only; Step 2 decides tool independently
 └────────────┬────────────┘
              │
              ▼

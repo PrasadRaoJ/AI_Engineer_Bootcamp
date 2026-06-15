@@ -74,10 +74,12 @@ messages = [
 ]
 response = llm_with_tools.invoke(messages)
 
+TOOL_MAP = {t.name: t for t in [get_order_status, cancel_order]}
+
 if response.tool_calls:
+    messages.append(response)                              # AIMessage added ONCE before the loop
     for tc in response.tool_calls:
-        result = get_order_status.invoke(tc["args"])
-        messages.append(response)                          # AIMessage with tool_call
+        result = TOOL_MAP[tc["name"]].invoke(tc["args"])   # use TOOL_MAP, not locals()
         messages.append(ToolMessage(result, tool_call_id=tc["id"]))
     final = llm_with_tools.invoke(messages)
     print(final.content)

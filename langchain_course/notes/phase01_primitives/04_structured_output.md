@@ -8,13 +8,15 @@ By default the LLM returns free text. **Structured output** forces the model to 
 
 ```
 ┌──────────────────────────┐
-│  1. Define schema        │  Pydantic / TypedDict / Dataclass / JSON Schema
+│  1. Define schema        │  Pydantic / TypedDict / JSON Schema
 └────────────┬─────────────┘
              │
              │  llm.with_structured_output(Schema)
              ▼
 ┌──────────────────────────┐
-│  2. Bind schema to LLM   │  LangChain uses provider's native method (tool injection for OpenAI/Anthropic, format= for Ollama)
+│  2. Bind schema to LLM   │  Provider picks its native method:
+│                          │  • Ollama → format= param (JSON mode)
+│                          │  • OpenAI/Anthropic → tool injection or native structured output
 └────────────┬─────────────┘
              │
              │  .invoke([SystemMessage, HumanMessage])
@@ -23,7 +25,7 @@ By default the LLM returns free text. **Structured output** forces the model to 
 │  3. LLM outputs JSON     │  {"order_id": "ORD123", "issue": "...", "priority": "high"}
 └────────────┬─────────────┘
              │
-             │  LangChain parses + validates JSON automatically
+             │  LangChain parses + validates automatically
              ▼
 ┌──────────────────────────┐
 │  4. You get typed object │  result.order_id / result.issue / result.priority
@@ -40,12 +42,13 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 
 class SupportTicket(BaseModel):
-    order_id: str                          # plain string
-    days_waiting: int                      # integer
-    is_urgent: bool                        # boolean
-    priority: Literal["low", "medium", "high"]   # constrained string
-    tags: List[str]                        # list of strings
-    notes: Optional[str] = None            # nullable field
+    order_id: str                                       # plain string
+    days_waiting: int                                   # integer
+    is_urgent: bool                                     # boolean
+    priority: Literal["low", "medium", "high"]          # constrained to fixed values
+    tags: List[str]                                     # list of strings
+    notes: Optional[str] = None                         # nullable field
+    issue: str = Field(description="Short description of the problem")  # guides the model
 ```
 
 ### 2. TypedDict (lighter — no validation, returns dict)
@@ -58,23 +61,47 @@ class SupportTicket(TypedDict):
     priority: str
 ```
 
-### 3. Dataclass — ⚠️ not supported by Ollama
+Returns a plain dict — access with `result["order_id"]`, not `result.order_id`.
 
-Dataclasses are listed in the LangChain docs but Ollama's backend rejects them. Use Pydantic instead.
-
-### 4. JSON Schema (raw dict — no class needed, most flexible)
+### 3. JSON Schema (raw dict — no class needed)
 
 ```python
 schema = {
     "type": "object",
     "properties": {
-        "order_id": {"type": "string"},
+        "order_id": {"type": "string", "description": "Order ID from the message"},
         "priority": {"type": "string", "enum": ["low", "medium", "high"]},
         "refund_eligible": {"type": "boolean"},
     },
     "required": ["order_id", "priority", "refund_eligible"],
 }
 ```
+
+Returns a plain dict. Use when you don't want to define a class.
+
+### 4. Dataclass — ⚠️ not supported by Ollama
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class SupportTicket:
+    order_id: str
+    priority: str
+```
+
+Ollama raises a `ValidationError` when a dataclass is passed to `with_structured_output`. Use Pydantic instead.
+
+### 5. Union types — ⚠️ not supported by Ollama
+
+```python
+from typing import Union
+
+# Works with OpenAI / Anthropic (tool-calling providers), NOT Ollama
+result = llm.with_structured_output(Union[StatusQuery, CancelRequest]).invoke(...)
+```
+
+Union types let the model choose between multiple schemas. Ollama raises `ValidationError` — requires a provider that supports native tool calling or structured output.
 
 ## Binding and calling
 
@@ -92,6 +119,16 @@ print(result.is_urgent)    # True
 print(result.priority)     # "high"
 ```
 
+## Structured output in agents (Phase 2)
+
+When using `create_agent`, use `response_format=` instead of `with_structured_output`:
+
+```python
+agent = create_agent(model=llm, tools=[...], response_format=SupportTicket)
+result = agent.invoke({"messages": [...]})
+result["structured_response"]  # validated Pydantic object
+```
+
 ## When to use
 
 - Extracting structured data from user messages (order ID, intent, priority)
@@ -100,19 +137,17 @@ print(result.priority)     # "high"
 
 ## Schema type comparison
 
-| Schema | Returns | Validation | How it validates |
-|--------|---------|------------|-----------------|
-| Pydantic | object | ✅ yes | Python-side at object creation — rich errors, type coercion |
-| JSON Schema | dict | ✅ yes | LangChain checks response against schema using `jsonschema` lib |
-| TypedDict | dict | ❌ no | just type hints — nothing enforced at runtime |
-| Dataclass | object | ❌ no | ⚠️ not supported by Ollama |
+| Schema | Returns | Validation | Ollama support |
+|--------|---------|------------|----------------|
+| Pydantic | object | ✅ yes — Python-side, rich errors | ✅ yes |
+| JSON Schema | dict | ✅ yes — checked against schema | ✅ yes |
+| TypedDict | dict | ❌ no — type hints only | ✅ yes |
+| Dataclass | object | ❌ no | ❌ ValidationError |
+| Union | object | ✅ yes | ❌ ValidationError |
 
-## Pydantic validation example (Python-side)
+## Pydantic validation example
 
 ```python
-from pydantic import BaseModel
-from typing import Literal
-
 class SupportTicket(BaseModel):
     order_id: str
     days_waiting: int
@@ -126,9 +161,6 @@ SupportTicket(order_id="ORD123", days_waiting="ten", priority="high")
 
 # ❌ ValidationError — "critical" not in Literal
 SupportTicket(order_id="ORD123", days_waiting=10, priority="critical")
-
-# ❌ ValidationError — order_id is missing
-SupportTicket(days_waiting=10, priority="high")
 ```
 
 Validation fires at object creation — bad data never makes it through.
@@ -136,6 +168,8 @@ Validation fires at object creation — bad data never makes it through.
 ## Gotchas
 
 - `.with_structured_output()` returns the object directly — there is no `.content`.
-- Use `Field(description=...)` to guide the model on what each field means.
+- Use `Field(description=...)` to guide the model on what each field means — this is part of the schema sent to the LLM.
 - Use `Literal[...]` instead of plain `str` when the value must be one of a fixed set.
 - `temperature=0` is recommended — deterministic structured results.
+- Dataclass and Union types raise `ValidationError` on Ollama — use Pydantic or JSON Schema instead.
+- TypedDict returns a dict, not an object — use `result["field"]` not `result.field`.

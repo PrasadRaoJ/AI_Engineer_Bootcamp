@@ -1,0 +1,143 @@
+"""
+Phase 2 — Topic 6: Human-in-the-loop
+Pause on risky tool calls — approve, edit, or reject before execution.
+"""
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware, ToolCallRequest
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+from langchain_core.tools import tool
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(model="qwen3.5:2b", temperature=0)
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+
+@tool
+def delete_records(table: str, condition: str) -> str:
+    """Delete records from a database table matching a condition."""
+    return f"Deleted records from '{table}' where {condition}."
+
+
+@tool
+def read_table(table: str) -> str:
+    """Read all records from a database table (safe, read-only)."""
+    return f"Records in '{table}': [order_001, order_002, order_003]"
+
+
+# ── Example 1: approve — execute the call as-is ───────────────────────────────
+
+print("=== Example 1: approve ===")
+
+agent = create_agent(
+    model=llm,
+    tools=[delete_records, read_table],
+    system_prompt="You are a database assistant. Be concise.",
+    middleware=[
+        HumanInTheLoopMiddleware(
+            interrupt_on={
+                "delete_records": True,    # always pause before deleting
+                "read_table": False,       # safe read — never pause
+            },
+        )
+    ],
+    checkpointer=InMemorySaver(),
+)
+
+cfg = {"configurable": {"thread_id": "hitl-001"}}
+
+# invoke — agent will call delete_records and PAUSE
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Delete all records from orders where status='cancelled'."}]},
+    config=cfg,
+    version="v2",
+)
+print("Interrupted. Pending tool calls:", result.interrupts)
+
+# human reviews, decides to approve
+result2 = agent.invoke(
+    Command(resume={"decisions": [{"type": "approve"}]}),
+    config=cfg,
+    version="v2",
+)
+print("After approve:", result2.value["messages"][-1].content)
+
+print()
+
+# ── Example 2: reject — tool is NOT called, feedback goes to agent ─────────────
+
+print("=== Example 2: reject ===")
+
+agent2 = create_agent(
+    model=llm,
+    tools=[delete_records, read_table],
+    system_prompt="You are a database assistant. Be concise.",
+    middleware=[
+        HumanInTheLoopMiddleware(
+            interrupt_on={"delete_records": True, "read_table": False}
+        )
+    ],
+    checkpointer=InMemorySaver(),
+)
+
+cfg2 = {"configurable": {"thread_id": "hitl-002"}}
+
+result = agent2.invoke(
+    {"messages": [{"role": "user", "content": "Delete all records from orders where status='cancelled'."}]},
+    config=cfg2,
+    version="v2",
+)
+print("Interrupted:", result.interrupts)
+
+# human rejects — agent gets rejection feedback and responds accordingly
+result2 = agent2.invoke(
+    Command(resume={
+        "decisions": [{"type": "reject", "message": "Rejected. Do not retry — this table is read-only in production."}]
+    }),
+    config=cfg2,
+    version="v2",
+)
+print("After reject:", result2.value["messages"][-1].content)
+
+print()
+
+# ── Example 3: conditional interrupt — pause only for dangerous conditions ─────
+
+print("=== Example 3: conditional interrupt (when=) ===")
+
+def is_delete_all(request: ToolCallRequest) -> bool:
+    """Interrupt only when condition contains no WHERE filter (mass delete risk)."""
+    condition = request.tool_call["args"].get("condition", "")
+    return condition.strip().lower() in ("", "1=1", "true")
+
+agent3 = create_agent(
+    model=llm,
+    tools=[delete_records, read_table],
+    system_prompt="You are a database assistant. Be concise.",
+    middleware=[
+        HumanInTheLoopMiddleware(
+            interrupt_on={
+                "delete_records": {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": "Mass-delete detected — approval required.",
+                    "when": is_delete_all,    # only interrupt for unfiltered deletes
+                },
+                "read_table": False,
+            }
+        )
+    ],
+    checkpointer=InMemorySaver(),
+)
+
+# filtered delete → condition is specific → when() returns False → no interrupt
+cfg3a = {"configurable": {"thread_id": "hitl-003a"}}
+result = agent3.invoke(
+    {"messages": [{"role": "user", "content": "Delete records from orders where status='cancelled'."}]},
+    config=cfg3a,
+    version="v2",
+)
+# when() returned False → ran without interrupt → result is a normal dict
+if result.interrupts:
+    print("Interrupted (unexpected):", result.interrupts)
+else:
+    print("No interrupt (filtered delete passed through):", result.value["messages"][-1].content[:100])

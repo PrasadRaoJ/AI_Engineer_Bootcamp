@@ -46,12 +46,12 @@ Each event is a dict:
 ```python
 {
     "event": "on_chat_model_stream",   # event type
-    "name":  "ChatOllama",             # which component
+    "name":  "ChatOllama",             # which component fired it
     "data":  {"chunk": AIMessageChunk} # the payload
 }
 ```
 
-## Usage
+## Basic usage
 
 ```python
 import asyncio
@@ -64,7 +64,7 @@ async def main():
     async for event in llm.astream_events(
         [SystemMessage("You are a helpful assistant."),
          HumanMessage("Capital of India?")],
-        version="v2",
+        version="v2",          # v1 is deprecated, v2 is current stable
     ):
         kind = event["event"]
         if kind == "on_chat_model_start":
@@ -77,10 +77,49 @@ async def main():
 asyncio.run(main())
 ```
 
+## Concurrent consumption with `asyncio.gather()`
+
+Run multiple event streams at the same time — each processes independently:
+
+```python
+async def collect_tokens(question):
+    tokens = []
+    async for event in llm.astream_events([HumanMessage(question)], version="v2"):
+        if event["event"] == "on_chat_model_stream":
+            tokens.append(event["data"]["chunk"].content)
+    return "".join(tokens)
+
+async def main():
+    # both run concurrently — not one after the other
+    answer1, answer2 = await asyncio.gather(
+        collect_tokens("Capital of India?"),
+        collect_tokens("Capital of Japan?"),
+    )
+    print("India:", answer1)
+    print("Japan:", answer2)
+
+asyncio.run(main())
+```
+
+## Tool call visibility with `bind_tools`
+
+With plain `bind_tools` (no full agent), tools do not execute — the model only decides to call them. Check `on_chat_model_end` to see the decision:
+
+```python
+async for event in llm_with_tools.astream_events(messages, version="v2"):
+    if event["event"] == "on_chat_model_end":
+        output = event["data"]["output"]
+        if output.tool_calls:
+            for tc in output.tool_calls:
+                print(f"Tool call decided: {tc['name']}({tc['args']})")
+```
+
+`on_tool_start` / `on_tool_end` only fire when tools actually execute inside a full agent (Phase 2+).
+
 ## Gotchas
 
 - Always async — there is no sync version of `.astream_events()`.
-- Always pass `version="v2"` — v1 is deprecated.
-- Filter by `event["event"]` to handle only the events you care about — there can be many noisy events from chains and wrappers.
-- `on_tool_start` / `on_tool_end` only fire when tools execute inside a full agent chain (Phase 3+). With plain `bind_tools`, the tool call decision is visible in `on_chat_model_end` via `output.tool_calls`.
-- More useful when you have tools + chains — on a plain LLM call, `.stream()` is simpler.
+- Always pass `version="v2"` — `v1` is deprecated and shows a warning.
+- Filter by `event["event"]` — there can be many noisy chain/wrapper events.
+- `on_tool_start` / `on_tool_end` only fire inside a running agent, not with plain `bind_tools`.
+- `asyncio.gather()` runs multiple event streams concurrently — don't use sequential `await` if you want parallelism.

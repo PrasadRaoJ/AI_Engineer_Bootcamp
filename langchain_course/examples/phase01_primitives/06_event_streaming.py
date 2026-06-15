@@ -12,12 +12,12 @@ def get_order_status(order_id: str) -> str:
 
 llm_with_tools = llm.bind_tools([get_order_status])
 
-# --- 1. plain LLM — shows start/stream/end events ---
+# --- 1. plain LLM — start / stream / end events ---
 async def plain_events():
     async for event in llm.astream_events(
         [SystemMessage("You are a Slipkart support agent."),
          HumanMessage("Capital of India in one word?")],
-        version="v2",
+        version="v2",   # v1 is deprecated
     ):
         kind = event["event"]
         if kind == "on_chat_model_start":
@@ -27,9 +27,10 @@ async def plain_events():
         elif kind == "on_chat_model_end":
             print("\n[LLM done]")
 
-# --- 2. LLM + tools — shows tool call decision in end event ---
-# NOTE: on_tool_start/on_tool_end only fire when tools run inside a full agent chain
-# With bind_tools alone, the model returns a tool_call decision — visible in on_chat_model_end
+
+# --- 2. LLM + tools — tool call decision visible in on_chat_model_end ---
+# NOTE: on_tool_start/on_tool_end only fire inside a full agent (Phase 2+)
+# With bind_tools alone, we see the tool call DECISION not execution
 async def tool_events():
     messages = [
         SystemMessage("You are a Slipkart support agent."),
@@ -48,10 +49,30 @@ async def tool_events():
                 print(f"[LLM replied: {output.content}]")
             print("[LLM done]")
 
+
+# --- 3. asyncio.gather — run two streams concurrently ---
+async def collect_tokens(question):
+    tokens = []
+    async for event in llm.astream_events([HumanMessage(question)], version="v2"):
+        if event["event"] == "on_chat_model_stream":
+            tokens.append(event["data"]["chunk"].content)
+    return "".join(tokens)
+
+
 async def main():
     print("── plain LLM events ──")
     await plain_events()
+
     print("\n── LLM + tool call decision ──")
     await tool_events()
+
+    print("\n── concurrent streams with asyncio.gather ──")
+    answer1, answer2 = await asyncio.gather(
+        collect_tokens("Capital of India in one word?"),
+        collect_tokens("Capital of Japan in one word?"),
+    )
+    print("India:", answer1)
+    print("Japan:", answer2)
+
 
 asyncio.run(main())

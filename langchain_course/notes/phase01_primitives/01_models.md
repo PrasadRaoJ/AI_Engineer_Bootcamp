@@ -5,6 +5,8 @@
 A **ChatModel** is LangChain's unified interface to any LLM provider (Ollama, OpenAI, Anthropic, etc.).
 You call `.invoke()`, `.stream()`, or `.batch()` — the same API regardless of the provider underneath.
 
+Models are the reasoning engine of agents — they decide which tools to call, how to interpret results, and when to give a final answer.
+
 ## Core import (Ollama)
 
 ```python
@@ -17,8 +19,11 @@ llm = ChatOllama(model="llama3.2")
 | Param | What it does | Default |
 |-------|-------------|---------|
 | `model` | Which model to run | required |
-| `temperature` | Randomness 0=deterministic, 1=creative | 0.7 |
-| `num_predict` | Max tokens to generate | -1 (unlimited) |
+| `temperature` | Randomness — 0=deterministic, 1=creative | 0.7 |
+| `num_predict` | Max tokens (Ollama-specific) | -1 (unlimited) |
+| `max_tokens` | Max tokens (standard LangChain param) | provider default |
+| `timeout` | Request deadline in seconds | None |
+| `max_retries` | Retry on rate limits / server errors | 6 |
 
 ## Flow
 
@@ -44,74 +49,98 @@ llm = ChatOllama(model="llama3.2")
 ## Three ways to call
 
 ```python
-# 1. Single call — returns AIMessage
+# 1. invoke — wait for full reply
 response = llm.invoke("What is 2+2?")
 print(response.content)
 
-# 2. Streaming — yields chunks as they arrive
+# 2. stream — yield tokens as they arrive
 for chunk in llm.stream("Tell me a joke"):
     print(chunk.content, end="", flush=True)
 
-# 3. Batch — multiple inputs in one call
-responses = llm.batch(["What is 2+2?", "What is 3+3?"])
+# 3. batch — multiple inputs, returns list in same order
+responses = llm.batch(["Capital of India?", "Capital of Japan?"])
 ```
+
+## batch vs batch_as_completed
+
+```python
+# batch — returns list in INPUT order, waits for all
+responses = llm.batch(["Q1", "Q2", "Q3"])
+
+# batch_as_completed — returns (index, result) tuples as each finishes
+# order is NOT guaranteed — use index to reconstruct
+for idx, response in llm.batch_as_completed(["Q1", "Q2", "Q3"]):
+    print(f"[{idx}]", response.content)
+```
+
+Use `batch_as_completed` when inputs vary in length and you want to process results as soon as they're ready.
 
 ## When to use
 
-- `.invoke()` — single request, you need the full response before continuing
-- `.stream()` — chat UIs, long responses, you want to show output as it arrives
-- `.batch()` — processing many inputs, more efficient than looping `.invoke()`
+- `.invoke()` — single request, need the full response before continuing
+- `.stream()` — chat UIs, long responses, show output as it arrives
+- `.batch()` — many inputs, results needed in order
+- `.batch_as_completed()` — many inputs, process each result immediately as it finishes
 
 ## Switching providers
 
-Same `.invoke()` / `.stream()` / `.batch()` API across all providers — only the import, class, and model name change.
+### Option A — `init_chat_model` (preferred for provider switching)
 
-### Ollama (local — used in this course)
+```python
+from langchain.chat_models import init_chat_model
+
+# "provider:model" string — no different imports needed
+llm = init_chat_model("openai:gpt-4o", temperature=0)
+llm = init_chat_model("anthropic:claude-sonnet-4-6", temperature=0)
+llm = init_chat_model("llama3.2", model_provider="ollama", temperature=0)
+```
+
+Same `.invoke()` / `.stream()` / `.batch()` API — only the string changes.
+
+### Option B — provider-specific classes (explicit, used in this course)
+
+#### Ollama (local — used in this course)
 ```python
 from langchain_ollama import ChatOllama
 
 llm = ChatOllama(model="llama3.2", temperature=0)
-# change: model name — "llama3.2" / "gemma3" / "qwen3.5:2b"
+# model: "llama3.2" / "gemma3" / "qwen3.5:2b"
 # no API key needed
 ```
 
-### OpenAI
+#### OpenAI
 ```python
 # pip install langchain-openai
 from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
-# change: model name — "gpt-4o" / "gpt-4o-mini" / "gpt-3.5-turbo"
 # needs: OPENAI_API_KEY in .env
 ```
 
-### Anthropic (Claude)
+#### Anthropic (Claude)
 ```python
 # pip install langchain-anthropic
 from langchain_anthropic import ChatAnthropic
 
 llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0)
-# change: model name — "claude-sonnet-4-6" / "claude-haiku-4-5-20251001" / "claude-opus-4-5"
 # needs: ANTHROPIC_API_KEY in .env
 ```
 
-### Google Gemini
+#### Google Gemini
 ```python
 # pip install langchain-google-genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
-# change: model name — "gemini-2.0-flash" / "gemini-1.5-pro"
 # needs: GOOGLE_API_KEY in .env
 ```
 
-### Groq (fast inference)
+#### Groq (fast inference)
 ```python
 # pip install langchain-groq
 from langchain_groq import ChatGroq
 
 llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
-# change: model name — "llama-3.3-70b-versatile" / "mixtral-8x7b-32768" / "gemma2-9b-it"
 # needs: GROQ_API_KEY in .env
 ```
 
@@ -129,4 +158,7 @@ llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
 - Response is an `AIMessage` object, not a plain string — use `.content` to get the text.
 - `temperature=0` makes the model deterministic — useful for tests and structured output.
-- Different providers have different param names — LangChain normalizes the common ones but not all.
+- `num_predict` is Ollama-specific; other providers use `max_tokens`.
+- `max_retries` default is 6 — increase to 10–15 for long-running agents on unreliable networks.
+- Client errors (401, 404) are never retried — only rate limits (429) and server errors (5xx).
+- `batch_as_completed()` returns results out of order — always use the index to map back to inputs.

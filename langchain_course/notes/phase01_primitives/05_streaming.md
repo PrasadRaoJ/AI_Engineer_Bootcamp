@@ -43,8 +43,6 @@ Instead of waiting for the full response, streaming yields **chunks** as the mod
 | `.stream()` | sync | scripts, CLI — single user only |
 | `.astream()` | async | FastAPI, web servers — multiple users simultaneously |
 
-## **`.invoke()`** — full response, blocking
-
 ## **`.stream()`** — sync streaming
 
 ```python
@@ -82,9 +80,44 @@ for chunk in llm.stream(messages):
     print(chunk.content, end="", flush=True)
 ```
 
+## AIMessageChunk — what each chunk looks like
+
+Each chunk is an `AIMessageChunk`, not a full `AIMessage`:
+
+```python
+chunks = list(llm.stream("What is 2+2?"))
+
+chunk = chunks[1]
+chunk.content          # plain text of this token, e.g. " 4"
+chunk.content_blocks   # normalized list — [{"type": "text", "text": " 4"}]
+                       # useful for multimodal (text, tool_call_chunk, reasoning)
+```
+
+`content_blocks` normalizes provider-specific formats — use it when you need to distinguish text from tool call chunks in the same stream.
+
+## Agent streaming (Phase 2)
+
+When using `create_agent`, streaming gains two new dimensions:
+
+```python
+# stream_mode="updates" — yields each node's output (model or tools)
+for chunk in agent.stream(input, stream_mode="updates"):
+    ...
+
+# stream_mode=["messages", "updates"] — yields tuples (mode, data)
+for mode, data in agent.stream(input, stream_mode=["messages", "updates"]):
+    if mode == "messages":
+        ...  # AIMessageChunk tokens
+    elif mode == "updates":
+        ...  # full node output (model call or tool result)
+```
+
+These are only available on a compiled agent graph — not on raw `llm.stream()`.
+
 ## Gotchas
 
-- Each chunk is an `AIMessageChunk`, not a full `AIMessage` — `.content` may be an empty string `""` on the first/last chunk.
-- `flush=True` is required to print tokens immediately — without it, Python buffers the output and defeats the purpose.
-- **`.stream()`** is blocking — use **`.astream()`** in async contexts (FastAPI, etc.).
-- Avoid combining streaming with `.with_structured_output()` for now — partial objects are hard to work with. LangChain does support it via partial object accumulation, but skip it until Phase 5+.
+- Each chunk is an `AIMessageChunk`, not a full `AIMessage` — `.content` may be empty `""` on the first/last chunk.
+- `flush=True` is required to print tokens immediately — without it Python buffers output and defeats the purpose.
+- **`.stream()`** blocks the thread — use **`.astream()`** in async contexts (FastAPI, etc.).
+- `version=` and `stream_mode=` are agent-level params — passing them to raw `llm.stream()` raises a `TypeError`.
+- Avoid combining raw `llm.stream()` with `.with_structured_output()` — partial objects are hard to use. LangChain supports it via accumulation, but wait until you need it.

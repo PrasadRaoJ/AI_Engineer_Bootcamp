@@ -75,8 +75,49 @@ history.append(HumanMessage("What's my name?"))
 response = llm.invoke(history)               # model remembers "JP"
 ```
 
+## Key fields per message type
+
+### AIMessage
+
+```python
+response = llm.invoke("What is 2+2?")
+
+response.content          # the reply text
+response.tool_calls       # list of tool calls (if any)
+response.usage_metadata   # token counts: {"input_tokens": 32, "output_tokens": 9, "total_tokens": 41}
+```
+
+`usage_metadata` is available on every AIMessage — useful for tracking token cost per call.
+
+### ToolMessage
+
+```python
+from langchain_core.messages import ToolMessage
+
+ToolMessage(
+    content="Order ORD123 is out for delivery.",   # text sent back to the model
+    tool_call_id="abc123",                          # must match AIMessage tool call id
+    artifact={"raw_data": {...}},                   # supplementary data NOT sent to model
+)
+```
+
+- `content` — what the model sees
+- `tool_call_id` — must exactly match the id from the AIMessage tool call
+- `artifact` — optional raw data (e.g. full API response) stored for your own use, invisible to the LLM
+
+### HumanMessage
+
+```python
+HumanMessage("Hello")                  # plain text
+HumanMessage("Hello", name="JP")       # name field — behavior varies by provider
+```
+
+The `name` field is optional. Some providers use it for user identification; others ignore it.
+
 ## Gotchas
 
 - Without a `SystemMessage`, the model uses its default persona.
 - `AIMessage` is what `.invoke()` returns — you must append it to history yourself; LangChain does not do this automatically.
-- `ToolMessage` requires a `tool_call_id` matching the model's tool call — covered in the Tools topic.
+- `ToolMessage` requires `tool_call_id` matching the model's tool call exactly — wrong id = model ignores the result.
+- `usage_metadata` is a dict, not an object — access as `response.usage_metadata["input_tokens"]`.
+- `artifact` on `ToolMessage` is invisible to the LLM — only use it to store data for your own downstream code.

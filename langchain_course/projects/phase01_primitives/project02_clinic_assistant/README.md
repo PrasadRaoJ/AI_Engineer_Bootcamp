@@ -10,7 +10,7 @@ A clinic receptionist agent for Yapollo Clinic, Nellore. Takes a patient's natur
 
 | Primitive | Where |
 |-----------|-------|
-| `ChatOllama` (Models) | powers all LLM calls |
+| `init_chat_model` (Models) | powers all LLM calls |
 | `SystemMessage`, `HumanMessage`, `ToolMessage` (Messages) | conversation history |
 | `@tool`, `bind_tools` (Tools) | 4 clinic actions |
 | `with_structured_output` + Pydantic (Structured Output) | request classification |

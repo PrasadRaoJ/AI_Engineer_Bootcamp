@@ -59,9 +59,12 @@ The loop runs automatically. You never write `if response.tool_calls` again.
 
 ```python
 from langchain.agents import create_agent
-from langchain_ollama import ChatOllama
+from langchain.chat_models import init_chat_model
+import os
 
-llm = ChatOllama(model="llama3.2")
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 def get_order_status(order_id: str) -> str:
     """Get the current status of an order."""
@@ -114,7 +117,7 @@ for chunk in agent.stream(inputs, stream_mode="values"):
 
 | Param | What it does |
 |-------|-------------|
-| `model` | `ChatOllama` instance or model string like `"openai:gpt-4o"` |
+| `model` | `init_chat_model(...)` result or model string like `"openai:gpt-4o"` |
 | `tools` | list of `@tool` functions or plain callables with docstrings |
 | `system_prompt` | sets the agent's persona / instructions |
 | `context_schema` | Pydantic schema for per-call context (user_id, API keys, etc.) |

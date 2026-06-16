@@ -46,7 +46,7 @@ Each event is a dict:
 ```python
 {
     "event": "on_chat_model_stream",   # event type
-    "name":  "ChatOllama",             # which component fired it
+    "name":  "ChatGoogleGenerativeAI",  # which component fired it
     "data":  {"chunk": AIMessageChunk} # the payload
 }
 ```
@@ -55,10 +55,13 @@ Each event is a dict:
 
 ```python
 import asyncio
-from langchain_ollama import ChatOllama
+from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage
+import os
 
-llm = ChatOllama(model="llama3.2", temperature=0)
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 async def main():
     async for event in llm.astream_events(

@@ -7,11 +7,15 @@ You call `.invoke()`, `.stream()`, or `.batch()` — the same API regardless of 
 
 Models are the reasoning engine of agents — they decide which tools to call, how to interpret results, and when to give a final answer.
 
-## Core import (Ollama)
+## Core import
 
 ```python
-from langchain_ollama import ChatOllama
-llm = ChatOllama(model="llama3.2")
+from langchain.chat_models import init_chat_model
+import os
+
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 ```
 
 ## Key parameters
@@ -34,7 +38,7 @@ llm = ChatOllama(model="llama3.2")
            │  .invoke() / .stream() / .batch()
            ▼
 ┌─────────────────────┐
-│   ChatOllama (LLM)  │
+│  init_chat_model    │
 └──────────┬──────────┘
            │
      ┌─────┴──────────────────────┐

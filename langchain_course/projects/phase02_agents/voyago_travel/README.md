@@ -226,12 +226,12 @@ rather than overwrite. The LLM never sees the store internals; it just gets a co
 ### Imports and singletons
 
 ```python
-llm    = ChatOllama(model="llama3.2", temperature=0)
+llm    = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
 store  = InMemoryStore()
 saver  = InMemorySaver()
 ```
 
-- `ChatOllama` — local LLM, `temperature=0` for deterministic tool calls
+- `init_chat_model` — provider-agnostic LLM via env vars, `temperature=0` for deterministic tool calls
 - `InMemoryStore` — long-term store that persists across threads and sessions (within a process)
 - `InMemorySaver` — checkpoint backend that persists conversation history per `thread_id`
 

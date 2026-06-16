@@ -40,7 +40,12 @@ Declare a `runtime` parameter typed as `ToolRuntime[Context]` — it is injected
 from pydantic import BaseModel
 from langgraph.prebuilt import ToolRuntime
 from langchain.agents import create_agent
-from langchain_ollama import ChatOllama
+from langchain.chat_models import init_chat_model
+import os
+
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 class Context(BaseModel):
     user_id: str
@@ -53,7 +58,7 @@ def cancel_order(order_id: str, runtime: ToolRuntime[Context]) -> str:
     return f"Order {order_id} cancelled by {runtime.context.user_id}."
 
 agent = create_agent(
-    model=ChatOllama(model="llama3.2"),
+    model=llm,
     tools=[cancel_order],
     system_prompt="You are a Slipkart support agent.",
     context_schema=Context,

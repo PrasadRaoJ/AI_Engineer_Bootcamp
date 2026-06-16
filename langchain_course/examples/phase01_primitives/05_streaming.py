@@ -1,8 +1,14 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 import asyncio
-from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 
-llm = ChatOllama(model="llama3.2", temperature=0)
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 # --- 1. sync streaming ---
 print("--- sync stream ---")

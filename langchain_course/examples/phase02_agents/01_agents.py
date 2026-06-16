@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 """
 Phase 2 — Topic 1: Agents
 create_agent replaces the manual tool-call loop from Phase 1.
@@ -5,9 +10,10 @@ create_agent replaces the manual tool-call loop from Phase 1.
 from pydantic import BaseModel
 from langgraph.prebuilt import ToolRuntime
 from langchain.agents import create_agent
-from langchain_ollama import ChatOllama
 
-llm = ChatOllama(model="llama3.2")
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 

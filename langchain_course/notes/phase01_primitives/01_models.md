@@ -140,7 +140,7 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
 # pip install langchain-groq
 from langchain_groq import ChatGroq
 
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+llm = ChatGroq(model="qwen/qwen3-32b", temperature=0)
 # needs: GROQ_API_KEY in .env
 ```
 

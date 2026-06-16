@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 """
 Voyago Travel Booking Assistant
 main.py: Agent setup and 5 scenarios + async event streaming.
@@ -10,7 +15,6 @@ import asyncio
 from langchain.agents import create_agent
 from langchain.agents.middleware import PIIMiddleware, dynamic_prompt, HumanInTheLoopMiddleware
 from langchain.agents.middleware.types import ModelRequest
-from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -22,7 +26,7 @@ from tools import (
     search_hotels, book_hotel, get_my_preferences, save_preference,
 )
 
-llm    = ChatOllama(model="llama3.2", temperature=0)
+llm    = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
 store  = InMemoryStore()
 saver  = InMemorySaver()
 

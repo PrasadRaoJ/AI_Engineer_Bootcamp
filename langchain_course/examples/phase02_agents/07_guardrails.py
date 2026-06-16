@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 """
 Phase 2 — Topic 7: Guardrails
 Validate and filter content before and after agent execution.
@@ -12,10 +17,11 @@ from langchain.agents.middleware import (
     hook_config,
 )
 from langchain_core.messages import AIMessage
-from langchain_ollama import ChatOllama
 from langgraph.runtime import Runtime
 
-llm = ChatOllama(model="llama3.2", temperature=0)
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 # ── Example 1: PIIMiddleware — redact email and credit card on input ───────────
 

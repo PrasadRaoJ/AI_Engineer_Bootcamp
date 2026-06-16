@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 """
 ClaimSure Insurance Claims Agent
 main.py: One agent, customer + adjuster contexts, 6 scenarios.
@@ -13,7 +18,6 @@ from langchain.agents.middleware import (
     HumanInTheLoopMiddleware,
     ToolCallRequest,
 )
-from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -30,7 +34,9 @@ from middleware import (
     role_based_tool_filter, AdjusterAuditLogger,
 )
 
-llm = ChatOllama(model="qwen3.5:2b", temperature=0)
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 store        = InMemoryStore()
 saver        = InMemorySaver()
 

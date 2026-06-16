@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 """
 Phase 2 — Topic 5: Long-term Memory
 Store persists user data across threads and sessions — unlike checkpointer which
@@ -8,10 +13,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import ToolRuntime
 from langchain.agents import create_agent, AgentState
 from langchain_core.tools import tool
-from langchain_ollama import ChatOllama
 from pydantic import BaseModel
 
-llm = ChatOllama(model="llama3.2", temperature=0)
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 # ── Store + Context setup ──────────────────────────────────────────────────────
 
@@ -82,7 +88,7 @@ print()
 
 print("=== new thread — store persists ===")
 agent_q = create_agent(
-    model=ChatOllama(model="qwen3.5:2b", temperature=0),
+    model=init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0),
     tools=[get_my_profile, save_city],
     system_prompt="You are a Slipkart support agent. Be concise.",
     context_schema=Context,

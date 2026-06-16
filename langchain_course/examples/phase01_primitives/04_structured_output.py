@@ -1,9 +1,15 @@
-from langchain_ollama import ChatOllama
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal, TypedDict
 
-llm = ChatOllama(model="llama3.2", temperature=0)
+llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
+# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
 # --- 1. Pydantic (recommended) ---
 
@@ -47,12 +53,13 @@ print("\n--- TypedDict ---")
 print("order_id :", simple["order_id"])   # dict access — not simple.order_id
 print("priority :", simple["priority"])
 
-# NOTE: Dataclass raises ValidationError on Ollama — use Pydantic instead
-# NOTE: Union types also raise ValidationError on Ollama — require OpenAI/Anthropic
+# NOTE: JSON schema with Groq requires a top-level "title" key (used as function name)
+# NOTE: Pydantic and TypedDict work without title — recommended over raw JSON schema
 
 # --- 3. JSON Schema (raw dict — no class needed) ---
 
 json_schema = {
+    "title": "RefundTicket",       # Groq requires title as the function name
     "type": "object",
     "properties": {
         "order_id": {"type": "string", "description": "Order ID from the message"},

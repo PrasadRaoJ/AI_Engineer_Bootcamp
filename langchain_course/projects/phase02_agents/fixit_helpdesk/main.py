@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+import os
+
 """
 FixIt IT Helpdesk Agent
 main.py: Agent setup and 5 scenarios.
@@ -12,7 +17,6 @@ Usage:
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware, dynamic_prompt
 from langchain.agents.middleware.types import ModelRequest
-from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -26,8 +30,7 @@ from tools import (
 )
 from middleware import social_engineering_filter, role_based_tool_filter, AuditLogger
 
-llm          = ChatOllama(model="qwen3.5:2b", temperature=0)
-llm_classify = ChatOllama(model="qwen3.5:2b", temperature=0, format="json")
+llm          = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
 store        = InMemoryStore()
 saver        = InMemorySaver()
 
@@ -291,7 +294,7 @@ Specific examples to guide you:
 """
 
 for ticket_text in tickets_to_classify:
-    classification = llm_classify.with_structured_output(TicketClassification).invoke([{
+    classification = llm.with_structured_output(TicketClassification).invoke([{
         "role": "user",
         "content": (
             f"Classify this IT support ticket and return a TicketClassification.\n"

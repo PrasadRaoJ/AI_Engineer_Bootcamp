@@ -19,11 +19,11 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress · 🔑 critical path · �
 - **langchain-middleware** → Phases 2, 5 — HITL approve/edit/reject + custom middleware hooks
 - **langgraph-persistence** → Phase 4 — checkpointers, threads, time travel, Store, subgraph scoping
 - **langgraph-human-in-the-loop** → Phase 4 — `interrupt()`, `Command(resume=)`, idempotency
-- **langchain-rag** → Phase 5 — full RAG pipeline
-- **langsmith-evaluator** → Phase 7 — offline/online evaluators, LLM-as-judge, trajectories
-- **deep-agents-memory** → Phase 9 — StateBackend / StoreBackend / CompositeBackend / FilesystemBackend
+- **langchain-rag** → Phases 5 & 6 — RAG intro (Phase 5), full pipeline + architectures (Phase 6)
+- **langsmith-evaluator** → Phase 8 — offline/online evaluators, LLM-as-judge, trajectories
+- **deep-agents-memory** → Phase 10 — StateBackend / StoreBackend / CompositeBackend / FilesystemBackend
 
-**Productization skills** 🛠️ (Phase 10 + capstone)
+**Productization skills** 🛠️ (Phase 11 + capstone)
 - **fastapi-templates** — production async FastAPI scaffold
 - **python-backend** — JWT/OAuth, async SQLAlchemy, Redis/Upstash, rate limiting
 - **fastapi-python** — FastAPI style guide (companion to templates)
@@ -116,7 +116,7 @@ Where production agents really live. We slow down here.
 
 ---
 
-## Phase 5 — Advanced LangChain patterns (built atop LangGraph) 🧠 langchain-middleware, langchain-rag · 🛠️ architecture-patterns
+## Phase 5 — Advanced LangChain patterns (built atop LangGraph) 🧠 langchain-middleware · 🛠️ architecture-patterns
 
 - [ ] 🔑 [Middleware overview](https://docs.langchain.com/oss/python/langchain/middleware/overview)
 - [ ] [Built-in middleware](https://docs.langchain.com/oss/python/langchain/middleware/built-in)
@@ -133,9 +133,40 @@ Where production agents really live. We slow down here.
 
 ---
 
-## Phase 6 — LangSmith Observability 🔑
+## Phase 6 — RAG Deep Dive 🔑 🧠 langchain-rag · 🛠️ architecture-patterns
 
-Wire into the Phase 3/5 projects — debug real code, not toys.
+The full RAG pipeline — from raw documents to production-grade retrieval. Builds on the RAG intro in Phase 5.
+
+### Building blocks
+
+- [ ] 🔑 [Document loaders](https://docs.langchain.com/oss/python/integrations/document_loaders) — PDF, web, file loaders; `load()` vs `lazy_load()`; 50+ integrations
+- [ ] 🔑 [Text splitters](https://docs.langchain.com/oss/python/integrations/splitters) — RecursiveCharacter (default), token, character; structure-aware: Markdown, JSON, code, HTML
+- [ ] 🔑 [Embedding models](https://docs.langchain.com/oss/python/integrations/embeddings) — what embeddings are; provider setup (OpenAI, Google, Ollama, HuggingFace); chunk size vs embedding dimension trade-offs
+- [ ] 🔑 [Vector stores](https://docs.langchain.com/oss/python/integrations/vectorstores/) — in-memory (dev), Chroma (local), Pinecone / Qdrant (prod); add, delete, similarity search; 40+ integrations
+- [ ] 🔑 [Retrievers](https://docs.langchain.com/oss/python/integrations/retrievers/) — VectorStoreRetriever, MMR (diversity), similarity score threshold, custom retrievers
+
+### RAG architectures
+
+- [ ] 🔑 [2-Step RAG — RAG chains](https://docs.langchain.com/oss/python/langchain/rag#rag-chains) — retrieval always before generation; simple, predictable, cheapest
+- [ ] 🔑 [Agentic RAG — RAG agent](https://docs.langchain.com/oss/python/langchain/rag#rag-agents) — agent decides when and how to retrieve; supports multi-step searches
+- [ ] 🔑 [Hybrid RAG with self-correction](https://docs.langchain.com/oss/python/langgraph/agentic-rag) — query enhancement → retrieval validation → answer validation (LangGraph graph)
+
+### Advanced retrieval patterns
+
+- [ ] Conversational RAG — combine retrieval with short-term memory; chat history rewrites the query before retrieval
+- [ ] Multi-query retrieval — LLM generates N paraphrased queries, results merged and de-duped
+- [ ] Self-querying retrieval — LLM constructs structured metadata filters automatically from the question
+- [ ] Ensemble / hybrid search — BM25 keyword + semantic vector search combined; beats pure vector on rare terms
+- [ ] Re-ranking — score and re-order retrieved chunks with a cross-encoder before sending to LLM
+- [ ] Parent document retrieval — index small chunks for precision, retrieve large parent chunk for context
+
+🧪 **Project (RAG):** Build a document Q&A agent — load PDFs/web pages → chunk → embed → Chroma store → agentic retrieval → answer with sources. Start with 🧰 **brainstorming** (which RAG architecture fits?), close with 🧰 **improve-codebase-architecture**.
+
+---
+
+## Phase 7 — LangSmith Observability 🔑
+
+Wire into the Phase 3/5/6 projects — debug real code, not toys.
 
 - [ ] 🔑 [Observability concepts](https://docs.langchain.com/langsmith/observability-concepts)
 - [ ] 🔑 [Tracing quickstart](https://docs.langchain.com/langsmith/observability-quickstart)
@@ -153,7 +184,7 @@ Wire into the Phase 3/5 projects — debug real code, not toys.
 
 ---
 
-## Phase 7 — LangSmith Evaluation 🔑 🧠 langsmith-evaluator
+## Phase 8 — LangSmith Evaluation 🔑 🧠 langsmith-evaluator
 
 - [ ] 🔑 [Evaluation concepts](https://docs.langchain.com/langsmith/evaluation-concepts) + [types](https://docs.langchain.com/langsmith/evaluation-types)
 - [ ] 🔑 [Evaluation quickstart](https://docs.langchain.com/langsmith/evaluation-quickstart)
@@ -181,7 +212,7 @@ Wire into the Phase 3/5 projects — debug real code, not toys.
 
 ---
 
-## Phase 8 — LangSmith Prompt Engineering
+## Phase 9 — LangSmith Prompt Engineering
 
 - [ ] [Prompt engineering concepts](https://docs.langchain.com/langsmith/prompt-engineering-concepts)
 - [ ] 🔑 [Prompt engineering quickstart](https://docs.langchain.com/langsmith/prompt-engineering-quickstart)
@@ -193,7 +224,7 @@ Wire into the Phase 3/5 projects — debug real code, not toys.
 
 ---
 
-## Phase 9 — Deep Agents (advanced agent framework) 🧠 deep-agents-memory · 🤖 firecrawl-search, agent-browser
+## Phase 10 — Deep Agents (advanced agent framework) 🧠 deep-agents-memory · 🤖 firecrawl-search, agent-browser
 
 Builds on everything above. Skip if you've shipped a production agent already.
 
@@ -219,7 +250,7 @@ Builds on everything above. Skip if you've shipped a production agent already.
 
 ---
 
-## Phase 10 — Deployment & Productization 🛠️ fastapi-templates, python-backend, fastapi-python, python-mcp-server-generator
+## Phase 11 — Deployment & Productization 🛠️ fastapi-templates, python-backend, fastapi-python, python-mcp-server-generator
 
 This phase has two tracks: **(A) LangGraph-native deployment** via Agent Server + Studio (managed path), and **(B) Custom productization** — wrap the agent in your own FastAPI service when you need auth, rate limits, billing, or non-graph endpoints.
 
@@ -247,7 +278,7 @@ This phase has two tracks: **(A) LangGraph-native deployment** via Agent Server 
 - [ ] 🛠️ **python-mcp-server-generator** — expose the agent as an MCP server (so other agents/Claude Desktop can call it)
 - [ ] Containerize (Dockerfile) and ship
 
-🧪 **Project 6 (productization):** Take the capstone Deep Agent from Project 5 and wrap it in a FastAPI service with auth, rate limiting, and an MCP endpoint.
+🧪 **Project 7 (productization):** Take the capstone Deep Agent from Project 5 and wrap it in a FastAPI service with auth, rate limiting, and an MCP endpoint.
 
 ---
 

@@ -109,6 +109,27 @@ When `return_direct=True`, the agent returns the tool's output directly to the u
 llm_with_tools = llm.bind_tools([get_order_status, cancel_order])
 ```
 
+### `tool_choice` — control when the LLM calls a tool
+
+```python
+# auto (default) — LLM decides whether to call a tool or reply with text
+llm_with_tools = llm.bind_tools([get_order_status], tool_choice="auto")
+
+# any — LLM MUST call some tool (picks which one)
+llm_with_tools = llm.bind_tools([get_order_status, cancel_order], tool_choice="any")
+
+# specific name — LLM MUST call this exact tool, no choice
+llm_with_tools = llm.bind_tools([get_order_status], tool_choice="get_order_status")
+```
+
+| `tool_choice` | LLM behaviour |
+|--------------|---------------|
+| `"auto"` | Decides freely — may call a tool or reply with text |
+| `"any"` | Must call at least one tool — picks which one |
+| `"<tool_name>"` | Must call that exact tool — no freedom |
+
+Use `"auto"` in real agents. Use a specific name only when testing a tool and want to guarantee it fires.
+
 ## Full tool-calling loop
 
 ```python

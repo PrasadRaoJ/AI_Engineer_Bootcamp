@@ -55,17 +55,77 @@ result = agent.invoke({"messages": [{"role": "user", "content": "..."}]})
 
 The loop runs automatically. You never write `if response.tool_calls` again.
 
+## How it works internally
+
+```
+Step 1 — @tool builds a JSON schema from your function
+──────────────────────────────────────────────────────
+  @tool
+  def get_order_status(order_id: str) -> str:
+      """Get the current delivery status of a Slipkart order."""
+
+  produces →
+  {
+    "name": "get_order_status",
+    "description": "Get the current delivery status of a Slipkart order.",
+    "parameters": { "order_id": { "type": "string" } }
+  }
+
+Step 2 — create_agent sends schema + user message to LLM
+──────────────────────────────────────────────────────────
+  LLM sees:
+    Tools available:
+      get_order_status(order_id: string) — Get the current delivery status...
+      cancel_order(order_id: string)     — Cancel a Slipkart order...
+
+    User: "Where is my order ORD123?"
+
+Step 3 — LLM returns structured JSON, NOT plain text
+──────────────────────────────────────────────────────
+  AIMessage(
+    content="",
+    tool_calls=[{ "name": "get_order_status", "args": { "order_id": "ORD123" } }]
+  )
+  LLM read "ORD123" from user message → matched to order_id field → put it in args.
+  The LLM does NOT call your function — it only produces JSON saying "call this".
+
+Step 4 — create_agent runs the tool in Python
+──────────────────────────────────────────────
+  get_order_status.invoke({"order_id": "ORD123"})
+  → ORDERS["ORD123"]
+  → "Out for delivery. Expected by 6 PM today."
+
+  Result wrapped as:
+  ToolMessage(content="Out for delivery...", tool_call_id="<same id>")
+
+Step 5 — LLM reads ToolMessage and gives final reply
+──────────────────────────────────────────────────────
+  Messages so far:
+    HumanMessage  → "Where is my order ORD123?"
+    AIMessage     → tool_calls: [get_order_status(ORD123)]
+    ToolMessage   → "Out for delivery. Expected by 6 PM today."
+
+  LLM call 2 → reads all three → produces final text reply
+  AIMessage(content="Your order ORD123 is out for delivery, expected by 6 PM today.")
+  tool_calls=[] → loop ends → returned to you
+```
+
+**Key insight:** The LLM never touches Python. It only produces and reads JSON. `create_agent` is the bridge that runs the actual function and feeds the result back.
+
 ## Basic usage
 
 ```python
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
+from langchain_core.tools import tool
 import os
 
 llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
-# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
-# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
+# groq:      LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama:    LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
+# llama.cpp: LLM_PROVIDER=openai  LLM_MODEL=local  +  OPENAI_BASE_URL=http://localhost:8080/v1  OPENAI_API_KEY=none
 
+@tool
 def get_order_status(order_id: str) -> str:
     """Get the current status of an order."""
     return f"Order {order_id} is out for delivery."
@@ -141,6 +201,7 @@ class Context(BaseModel):
     user_id: str
     channel: str
 
+@tool
 def get_order_status(order_id: str, runtime: ToolRuntime[Context]) -> str:
     """Get order status for the current user."""
     return f"Order {order_id} status for user {runtime.context.user_id}: Out for delivery."

@@ -1,19 +1,21 @@
 from dotenv import load_dotenv
 load_dotenv()
 from langchain.chat_models import init_chat_model
+from langchain_core.tools import tool
+from pydantic import BaseModel
+from langgraph.prebuilt import ToolRuntime
+from langchain.agents import create_agent
 import os
 
 """
 Phase 2 — Topic 1: Agents
 create_agent replaces the manual tool-call loop from Phase 1.
 """
-from pydantic import BaseModel
-from langgraph.prebuilt import ToolRuntime
-from langchain.agents import create_agent
 
 llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
-# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
-# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
+# groq:      LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
+# ollama:    LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
+# llama.cpp: LLM_PROVIDER=openai  LLM_MODEL=local  +  OPENAI_BASE_URL=http://localhost:8080/v1  OPENAI_API_KEY=none  (start: ~/models/switch-model.sh qwen3-4b)
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
@@ -24,11 +26,13 @@ ORDERS = {
 }
 
 
+@tool
 def get_order_status(order_id: str) -> str:
     """Get the current delivery status of a Slipkart order."""
     return ORDERS.get(order_id, f"No order found with ID {order_id}.")
 
 
+@tool
 def cancel_order(order_id: str) -> str:
     """Cancel a Slipkart order and initiate a refund."""
     if order_id in ORDERS:
@@ -70,6 +74,7 @@ class Context(BaseModel):
     role: str   # "admin" or "customer"
 
 
+@tool
 def cancel_order_ctx(order_id: str, runtime: ToolRuntime[Context]) -> str:
     """Cancel a Slipkart order. Requires admin role."""
     if runtime.context.role != "admin":

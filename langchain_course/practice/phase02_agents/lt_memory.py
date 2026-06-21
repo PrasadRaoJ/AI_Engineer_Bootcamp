@@ -1,23 +1,17 @@
 from dotenv import load_dotenv
 load_dotenv()
-from langchain.chat_models import init_chat_model
 import os
 
-"""
-Phase 2 — Topic 5: Long-term Memory
-Store persists user data across threads and sessions — unlike checkpointer which
-only keeps message history within one thread.
-"""
+from langchain.chat_models import init_chat_model
+from langchain.agents import create_agent,AgentState
 from langgraph.store.memory import InMemoryStore
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import ToolRuntime
-from langchain.agents import create_agent
-from langchain_core.tools import tool
+from langchain_core.tools import tool 
 from pydantic import BaseModel
 
-llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider=os.getenv("LLM_PROVIDER", "google_genai"), temperature=0)
-# groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
-# ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
+
+llm = init_chat_model(os.getenv("LLM_MODEL", "llama3.2"), model_provider=os.getenv("LLM_PROVIDER", "ollama"), temperature=0)
 
 # ── Store + Context setup ──────────────────────────────────────────────────────
 
@@ -26,6 +20,8 @@ store = InMemoryStore()
 class Context(BaseModel):
     user_id: str
     name: str
+
+
 
 # ── Tools that read/write the store ───────────────────────────────────────────
 
@@ -56,30 +52,35 @@ def log_workout(date: str, activity: str, runtime: ToolRuntime[Context]) -> str:
     return f"Logged: {activity} on {date}."
 
 
-# ── Agent ─────────────────────────────────────────────────────────────────────
+tools = [save_fitness_profile, get_fitness_profile, log_workout]
 
-ctx = Context(user_id="U001", name="Ravi")
+ctx = Context(user_id="U001", name="Prasad")
 
 agent = create_agent(
     model=llm,
-    tools=[save_fitness_profile, get_fitness_profile, log_workout],
-    system_prompt=f"You are a fitness coach assistant for {ctx.name}. Be concise.",
+    tools=tools,
+    system_prompt=f"You are a fitness coach assistant. The user's name is {ctx.name}. Always address them by name. Be concise.",
     context_schema=Context,
     store=store,
     checkpointer=InMemorySaver(),   # both short + long term together
 )
- 
+
+
 # ── Example 1: save fitness profile ───────────────────────────────────────────
 
 print("=== save fitness profile ===")
 cfg1 = {"configurable": {"thread_id": "u001-session-1"}}
+
+
 r = agent.invoke(
-    {"messages": [{"role": "user", "content": "I weigh 82kg and my goal is 75kg."}]},
+    {"messages": [{"role": "user", "content": "I weigh 75kg and my goal is 65kg."}]},
     config=cfg1, context=ctx,
 )
 print(r["messages"][-1].content)
 
 print()
+
+
 
 # ── Example 2: log a workout ──────────────────────────────────────────────────
 
@@ -106,10 +107,10 @@ print(r["messages"][-1].content)
 print()
 
 # ── Example 4: direct store operations ────────────────────────────────────────
-
 print("Complete Store Data:",store)
 print()
-print("=== direct store put/get/search/delete ===")
+
+print("=== direct store put/get/search ===")
 
 store.put(("users", "U002"), "fitness", {"weight": 70, "goal": 65})
 
@@ -123,6 +124,8 @@ results = store.search(("users",))
 print("search results:")
 for r in results:
     print(f"  {r.namespace} / {r.key} → {r.value}")
+
+
 
 store.delete(("users", "U002"), "fitness")
 deleted = store.get(("users", "U002"), "fitness")

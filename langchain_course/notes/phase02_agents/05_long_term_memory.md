@@ -13,6 +13,29 @@ Thread C: Ravi new session─┘     U002 → {name: Priya, city: Mumbai}
                                   (survives process restart in production)
 ```
 
+## Real use case
+
+A user logs their weight and goal in session 1. A week later, in a completely new session, the agent already knows their stats — no need to ask again.
+
+```
+Session 1 (thread: sess-001):
+  User: "I weigh 82kg, my goal is to reach 75kg."
+  Agent: calls save_profile() → store.put(("users","U001"), "fitness", {"weight": 82, "goal": 75})
+
+  User: "I did 30 mins of running today."
+  Agent: calls log_workout() → store.put(("users","U001"), "workouts", {"2026-06-21": "30 min run"})
+
+--- one week later, new session ---
+
+Session 2 (thread: sess-002):
+  User: "How am I doing?"
+  Agent: calls get_profile() → store.get(("users","U001"), "fitness")
+       → knows weight=82, goal=75 — gives personalized progress update
+       → no need to ask user to repeat their stats
+```
+
+Short-term memory (checkpointer) would forget between sessions. Long-term memory (store) persists forever across any number of sessions.
+
 ## Store interface
 
 ```
@@ -52,18 +75,18 @@ agent = create_agent(
 ## put and get
 
 ```python
-# Save user profile
-store.put(("users", "U001"), "profile", {"name": "Ravi", "city": "Nellore", "vip": True})
+# Save fitness profile
+store.put(("users", "U001"), "fitness", {"weight": 82, "goal": 75})
 
 # Retrieve — returns an Item object or None if missing
-item = store.get(("users", "U001"), "profile")
+item = store.get(("users", "U001"), "fitness")
 if item:
-    print(item.value)      # {"name": "Ravi", "city": "Nellore", "vip": True}
-    print(item.key)        # "profile"
+    print(item.value)      # {"weight": 82, "goal": 75}
+    print(item.key)        # "fitness"
     print(item.namespace)  # ("users", "U001")
 
 # Missing key returns None — always check
-missing = store.get(("users", "U999"), "profile")
+missing = store.get(("users", "U999"), "fitness")
 # missing is None
 ```
 
@@ -74,9 +97,9 @@ missing = store.get(("users", "U999"), "profile")
 results = store.search(("users",))
 for r in results:
     print(r.namespace, r.key, r.value)
-# ("users", "U001")  profile   {"name": "Ravi", ...}
-# ("users", "U001")  preferences  {...}
-# ("users", "U002")  profile   {"name": "Priya", ...}
+# ("users", "U001")  fitness         {"weight": 82, "goal": 75}
+# ("users", "U001")  workout_2026-06-21  {"activity": "30 min run"}
+# ("users", "U002")  fitness         {"weight": 70, "goal": 65}
 ```
 
 ## Accessing store inside a tool
@@ -92,22 +115,27 @@ class Context(BaseModel):
     user_id: str
 
 @tool
-def get_my_profile(runtime: ToolRuntime[Context]) -> str:
-    """Get the saved profile of the current user."""
-    item = runtime.store.get(("users", runtime.context.user_id), "profile")
+def get_fitness_profile(runtime: ToolRuntime[Context]) -> str:
+    """Get the saved fitness profile of the current user."""
+    item = runtime.store.get(("users", runtime.context.user_id), "fitness")
     if item is None:
-        return "No profile found."
-    return f"Name: {item.value['name']}, City: {item.value['city']}"
+        return "No profile found. Please share your weight and goal."
+    v = item.value
+    return f"Weight: {v['weight']}kg, Goal: {v['goal']}kg"
 
 @tool
-def save_city(city: str, runtime: ToolRuntime[Context]) -> str:
-    """Save or update the city for the current user."""
+def save_fitness_profile(weight: float, goal: float, runtime: ToolRuntime[Context]) -> str:
+    """Save or update the user's weight and goal."""
     uid = runtime.context.user_id
-    item = runtime.store.get(("users", uid), "profile")
-    profile = item.value if item else {}
-    profile["city"] = city
-    runtime.store.put(("users", uid), "profile", profile)
-    return f"City updated to {city}."
+    runtime.store.put(("users", uid), "fitness", {"weight": weight, "goal": goal})
+    return f"Profile saved. Weight: {weight}kg, Goal: {goal}kg."
+
+@tool
+def log_workout(date: str, activity: str, runtime: ToolRuntime[Context]) -> str:
+    """Log a workout for the current user."""
+    uid = runtime.context.user_id
+    runtime.store.put(("users", uid), f"workout_{date}", {"activity": activity})
+    return f"Logged: {activity} on {date}."
 ```
 
 ## Short-term vs Long-term comparison

@@ -78,14 +78,15 @@ agent.invoke({"messages": [{"role": "user", "content": "What is my name?"}]},
 
 ## Custom state with `state_schema`
 
-Extend `AgentState` to store extra fields alongside messages:
+Extend `AgentState` to store extra fields alongside messages. This is **for your backend code**, not for the user — the user only sees LLM replies, your code reads the state fields.
 
 ```python
 from langchain.agents import AgentState
 
 class CustomState(AgentState):
-    user_name: str = ""
     turn_count: int = 0
+    user_plan: str = "free"    # "free" | "pro"
+    escalated: bool = False
 
 agent = create_agent(
     model=llm,
@@ -93,7 +94,38 @@ agent = create_agent(
     checkpointer=InMemorySaver(),
     state_schema=CustomState,
 )
+
+r = agent.invoke(
+    {"messages": [...], "turn_count": 1, "user_plan": "free"},
+    config=cfg,
+)
+# your backend reads this, not the user
+if r["turn_count"] > 10:
+    print("Free limit reached.")
 ```
+
+**When to use custom state:**
+
+| Field | Use |
+|---|---|
+| `turn_count` | Rate limiting — block after N turns |
+| `tokens_used` | Billing — track cost per session |
+| `user_plan` | Feature gating — free vs pro |
+| `booking_stage` | Workflow — track step in multi-turn flow |
+| `escalated` | Flags — notify human agent |
+
+**Trim does NOT delete custom state fields:**
+
+`RemoveMessage` only touches the `messages` list. Custom fields survive trimming:
+
+```
+After trim:
+  messages    → [last 4 only]   ← trimmed
+  turn_count  → 42              ← intact
+  user_plan   → "pro"           ← intact
+```
+
+So you can safely combine `@before_model` trim + `CustomState` — messages get pruned, your backend data stays.
 
 ## Managing message history — three approaches
 
@@ -113,6 +145,24 @@ def trim_old_messages(state: AgentState, runtime):
         return {"messages": [RemoveMessage(id=m.id) for m in messages[:-10]]}
 ```
 
+**What counts as a message?**
+Every entry in history — both Human and AI — is one message. One conversation turn = 2 messages.
+
+```
+messages = [
+    HumanMessage("My name is Ravi."),      # index 0  ← removed (old)
+    AIMessage("Nice to meet you, Ravi."),  # index 1  ← removed (old)
+    HumanMessage("I work at Infosys."),    # index 2  ← kept (last 4)
+    AIMessage("Got it."),                  # index 3  ← kept
+    HumanMessage("What do you know?"),     # index 4  ← kept
+    AIMessage("You are Ravi..."),          # index 5  ← kept
+]
+messages[:-4]  →  removes index 0, 1      (old messages)
+messages[-4:]  →  keeps  index 2, 3, 4, 5 (last 4 = last 2 turns)
+```
+
+So `keep last 4 messages` = `keep last 2 turns` of conversation.
+
 ### 2. Summarize with `SummarizationMiddleware`
 
 Condenses old messages into a summary when a threshold is hit — the model still has context, just compressed:
@@ -129,15 +179,23 @@ summarizer = SummarizationMiddleware(
 agent = create_agent(model=llm, tools=[...], checkpointer=InMemorySaver(), middleware=[summarizer])
 ```
 
-### 3. Delete all with `REMOVE_ALL_MESSAGES`
+**Important:**
+- `SummarizationMiddleware` makes a real LLM call using the `model=` you pass — it costs tokens
+- No system prompt needed — it has its own built-in summarization prompt (`DEFAULT_SUMMARY_PROMPT`)
+- You can override it if needed: `summary_prompt="Summarize briefly in bullet points."`
 
-Clear the entire history for a thread:
+### 3. Delete all messages
 
 ```python
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langchain_core.messages import RemoveMessage
 
-agent.invoke({"messages": REMOVE_ALL_MESSAGES}, config=cfg)
+agent.update_state(cfg, {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES)]})
 ```
+
+`REMOVE_ALL_MESSAGES` is a special sentinel string `"__remove_all__"`. It must be wrapped in `RemoveMessage(id=REMOVE_ALL_MESSAGES)` and passed via `update_state` — **not** via `invoke`.
+
+> Passing `{"messages": REMOVE_ALL_MESSAGES}` directly to `invoke` does NOT work — it treats the string as a new message.
 
 ## Approach comparison
 

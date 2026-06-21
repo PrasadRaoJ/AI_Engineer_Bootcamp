@@ -35,11 +35,15 @@ def get_order_status(order_id: str) -> str:
     }
     return statuses.get(order_id, f"Order {order_id} not found.")
 
+get_order_status.metadata = {"roles": ["admin", "customer"]}
+
 
 @tool
 def cancel_order(order_id: str) -> str:
     """Cancel a Slipkart order. Admin only."""
     return f"Order {order_id} cancelled. Refund in 3-5 days."
+
+cancel_order.metadata = {"roles": ["admin"]}
 
 
 # ── Example 1: @dynamic_prompt — personalize system prompt per user ────────────
@@ -74,10 +78,9 @@ print()
 
 @wrap_model_call
 def filter_tools_by_role(request: ModelRequest[Context], handler):
-    if request.runtime.context.role != "admin":
-        # remove cancel_order for non-admins
-        filtered = [t for t in request.tools if t.name != "cancel_order"]
-        request = request.override(tools=filtered)   # .override() — never direct assignment
+    role = request.runtime.context.role
+    filtered = [t for t in request.tools if role in t.metadata.get("roles", [role])]
+    request = request.override(tools=filtered)
     print(f"  [middleware] tools visible to LLM: {[t.name for t in request.tools]}")
     return handler(request)
 

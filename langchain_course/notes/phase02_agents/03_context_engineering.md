@@ -128,6 +128,130 @@ agent.invoke(input, context=Context(...))
 | Inject user data into tools | `context_schema=` + `context=` (covered in Runtime) |
 | Summarize long message history | `SummarizationMiddleware` (covered in Short-term Memory) |
 
+## ToolRuntime vs ModelRequest — which one to use?
+
+| | `ToolRuntime[Context]` | `ModelRequest[Context]` |
+|---|---|---|
+| **Where** | Inside `@tool` functions | Inside middleware (`@dynamic_prompt`, `@wrap_model_call`) |
+| **When** | After LLM calls the tool | Before LLM is called |
+| **Access** | `runtime.context` | `request.runtime.context` + messages, tools, model |
+| **Use for** | RBAC check, data access inside a tool | Personalize prompt, filter tools before LLM sees them |
+
+```
+agent.invoke(input, context=Context(...))
+        │
+        ▼
+  middleware  ← ModelRequest[Context]   (before LLM)
+        │
+        ▼
+       LLM    → decides to call a tool
+        │
+        ▼
+     @tool    ← ToolRuntime[Context]    (at execution)
+```
+
+Same `Context` data flows through both — accessed at different stages.
+
+- Need to block tool execution? → `ToolRuntime`
+- Need to hide tools from LLM entirely? → `ModelRequest` middleware
+- Best practice: **both** — middleware hides, `ToolRuntime` is safety net
+
+## Tool metadata — declare permissions on the tool itself
+
+Instead of hardcoding role/tool names in middleware, tag each tool with allowed roles:
+
+```python
+@tool
+def cancel_order(order_id: str) -> str:
+    """Cancel a Slipkart order."""
+    ...
+
+cancel_order.metadata = {"roles": ["admin"]}
+get_order_status.metadata = {"roles": ["admin", "customer"]}
+```
+
+Then middleware becomes generic — no tool names hardcoded:
+
+```python
+@wrap_model_call
+def filter_by_role(request: ModelRequest[Context], handler):
+    role = request.runtime.context.role
+    filtered = [t for t in request.tools if role in t.metadata.get("roles", [role])]
+    request = request.override(tools=filtered)
+    return handler(request)
+```
+
+New tool added? Just set its `.metadata` — middleware needs no changes.
+
+## Security — Defense in Depth with Two Layers
+
+Context engineering is not just about personalization — it is a core security mechanism for multi-role AI agents. Restricting what the LLM sees and what tools can execute must be treated as two independent enforcement points.
+
+### Why one layer is not enough
+
+**Middleware only (no ToolRuntime check):**
+The LLM cannot see the tool, but if middleware is misconfigured, bypassed, or a future developer removes it, the tool executes without any restriction. There is no fallback.
+
+**ToolRuntime only (no middleware filter):**
+The tool blocks unauthorized execution, but the LLM still sees the tool in its schema. It will attempt to call it, receive a "Permission denied" response, and may retry or hallucinate — wasting tokens and producing poor responses.
+
+### Two-layer model
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Layer 1 — Middleware (LLM-level restriction)        │
+│  What: filter tools before LLM schema is sent       │
+│  How:  @wrap_model_call + tool.metadata             │
+│  Result: LLM never knows the tool exists            │
+├─────────────────────────────────────────────────────┤
+│  Layer 2 — ToolRuntime (execution-level restriction) │
+│  What: enforce role inside the tool function        │
+│  How:  runtime.context.role check                   │
+│  Result: even a direct/unexpected call is blocked   │
+└─────────────────────────────────────────────────────┘
+```
+
+### Real example — ClaimSure Insurance Agent
+
+A `staff` member should not be able to override claim rejections — only a `manager` can.
+
+```python
+# Tool declares who can access it
+override_rejection.metadata = {"roles": ["manager"]}
+
+# Layer 1 — middleware hides tool from LLM for non-managers
+@wrap_model_call
+def filter_by_role(request: ModelRequest[Context], handler):
+    role = request.runtime.context.role
+    filtered = [t for t in request.tools if role in t.metadata.get("roles", [role])]
+    request = request.override(tools=filtered)
+    return handler(request)
+
+# Layer 2 — tool blocks execution even if called directly
+@tool
+def override_rejection(claim_id: str, reason: str, runtime: ToolRuntime[Context]) -> str:
+    """Override a rejected claim. Managers only."""
+    if runtime.context.role != "manager":
+        return "Only managers can override rejections."
+    ...
+```
+
+**What this guarantees:**
+- A `staff` LLM session never sees `override_rejection` in its tool schema → cannot attempt the call
+- If somehow called directly (API abuse, future bug) → blocked at execution
+- Security is defined on the tool itself via `.metadata` → no scattered role checks across the codebase
+
+### Summary
+
+| Concern | Middleware | ToolRuntime |
+|---|---|---|
+| LLM attempts unauthorized tool call | Prevented | Blocked after attempt |
+| Misconfigured middleware bypassed | Not covered | Still blocked |
+| Poor LLM responses from denied tools | Prevented | Not covered |
+| Defense in depth | — | Both together ✅ |
+
+Always implement both layers for any tool that handles sensitive operations.
+
 ## Gotchas
 
 - `@dynamic_prompt` and `@wrap_model_call` are in `langchain.agents.middleware` — not `langchain.agents`.
@@ -135,3 +259,4 @@ agent.invoke(input, context=Context(...))
 - Middleware is passed in `middleware=[]` on `create_agent` — not at invoke time.
 - Multiple middleware stack in order — first in `middleware=[]` runs first.
 - `@dynamic_prompt` is a shorthand for `@wrap_model_call` that only changes the system message.
+- **`tools=[]` causes an infinite loop.** `create_agent` always expects at least one tool. Add a real tool (or a dummy info tool) — the agent won't terminate otherwise.

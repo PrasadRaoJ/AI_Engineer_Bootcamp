@@ -42,7 +42,7 @@ agent = create_agent(
     middleware=[
         HumanInTheLoopMiddleware(
             interrupt_on={
-                "delete_records": True,    # always pause before deleting
+                "delete_records": {"allowed_decisions": ["approve", "edit", "reject"]},
                 "read_table": False,       # safe read — never pause
             },
         )
@@ -56,17 +56,15 @@ cfg = {"configurable": {"thread_id": "hitl-001"}}
 result = agent.invoke(
     {"messages": [{"role": "user", "content": "Delete all records from orders where status='cancelled'."}]},
     config=cfg,
-    version="v2",
 )
-print("Interrupted. Pending tool calls:", result.interrupts)
+print("Interrupted. Pending tool calls:", result["__interrupt__"])
 
 # human reviews, decides to approve
 result2 = agent.invoke(
     Command(resume={"decisions": [{"type": "approve"}]}),
     config=cfg,
-    version="v2",
 )
-print("After approve:", result2.value["messages"][-1].content)
+print("After approve:", result2["messages"][-1].content)
 
 print()
 
@@ -80,7 +78,10 @@ agent2 = create_agent(
     system_prompt="You are a database assistant. Be concise.",
     middleware=[
         HumanInTheLoopMiddleware(
-            interrupt_on={"delete_records": True, "read_table": False}
+            interrupt_on={
+                "delete_records": {"allowed_decisions": ["approve", "reject"]},
+                "read_table": False,
+            }
         )
     ],
     checkpointer=InMemorySaver(),
@@ -91,19 +92,17 @@ cfg2 = {"configurable": {"thread_id": "hitl-002"}}
 result = agent2.invoke(
     {"messages": [{"role": "user", "content": "Delete all records from orders where status='cancelled'."}]},
     config=cfg2,
-    version="v2",
 )
-print("Interrupted:", result.interrupts)
+print("Interrupted:", result["__interrupt__"])
 
 # human rejects — agent gets rejection feedback and responds accordingly
 result2 = agent2.invoke(
     Command(resume={
-        "decisions": [{"type": "reject", "message": "Rejected. Do not retry — this table is read-only in production."}]
+        "decisions": [{"type": "reject", "feedback": "Rejected. Do not retry — this table is read-only in production."}]
     }),
     config=cfg2,
-    version="v2",
 )
-print("After reject:", result2.value["messages"][-1].content)
+print("After reject:", result2["messages"][-1].content)
 
 print()
 
@@ -140,10 +139,9 @@ cfg3a = {"configurable": {"thread_id": "hitl-003a"}}
 result = agent3.invoke(
     {"messages": [{"role": "user", "content": "Delete records from orders where status='cancelled'."}]},
     config=cfg3a,
-    version="v2",
 )
 # when() returned False → ran without interrupt → result is a normal dict
-if result.interrupts:
-    print("Interrupted (unexpected):", result.interrupts)
+if "__interrupt__" in result:
+    print("Interrupted (unexpected):", result["__interrupt__"])
 else:
-    print("No interrupt (filtered delete passed through):", result.value["messages"][-1].content[:100])
+    print("No interrupt (filtered delete passed through):", result["messages"][-1].content[:100])

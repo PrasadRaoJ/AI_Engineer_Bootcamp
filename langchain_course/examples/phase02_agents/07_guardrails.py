@@ -5,7 +5,12 @@ import os
 
 """
 Phase 2 — Topic 7: Guardrails
-Validate and filter content before and after agent execution.
+Real use case: Bank customer support chatbot.
+
+PIIMiddleware   — strip card/email before model ever sees them (PCI-DSS / GDPR safe)
+@before_agent   — block off-topic questions before wasting a model call
+class middleware — reusable topic filter, configurable per deployment
+@after_agent    — prevent model from leaking internal system details in response
 """
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -13,6 +18,7 @@ from langchain.agents.middleware import (
     AgentMiddleware,
     before_agent,
     after_agent,
+    before_model,
     AgentState,
     hook_config,
 )
@@ -23,76 +29,106 @@ llm = init_chat_model(os.getenv("LLM_MODEL", "gemini-2.5-flash"), model_provider
 # groq:   LLM_PROVIDER=groq    LLM_MODEL=llama-3.3-70b-versatile
 # ollama: LLM_PROVIDER=ollama  LLM_MODEL=llama3.2
 
-# ── Example 1: PIIMiddleware — redact email and credit card on input ───────────
 
-print("=== Example 1: PIIMiddleware — redact PII ===")
+# ── Example 1: PIIMiddleware — card number masked before model sees it ─────────
+#
+# User reports a billing issue and pastes their card number in the message.
+# PIIMiddleware strips card + email BEFORE sending to the model.
+# AI response and logs never contain real card numbers — PCI-DSS / GDPR safe.
 
-agent_pii = create_agent(
+print("=== Example 1: PIIMiddleware — billing complaint ===")
+
+# @before_model runs AFTER PIIMiddleware has processed the input.
+# Prints exactly what the model receives — confirms PII is stripped.
+@before_model
+def spy_on_model_input(state: AgentState, runtime: Runtime):
+    print("[before_model] What the model actually sees:")
+    for msg in state["messages"]:
+        print(f"  [{msg.type}]: {msg.content}")
+    print()
+
+support_agent = create_agent(
     model=llm,
     tools=[],
-    system_prompt="You are a helpful assistant. Repeat back exactly what the user said.",
+    system_prompt=(
+        "You are a bank customer support agent. "
+        "Help the user with their billing issue. Be concise."
+    ),
     middleware=[
         PIIMiddleware("email", strategy="redact", apply_to_input=True),
         PIIMiddleware("credit_card", strategy="mask", apply_to_input=True),
+        spy_on_model_input,   # confirm PII is stripped before model call
     ],
 )
 
-# email and credit card in input → redacted before model sees them
-r = agent_pii.invoke({
+r = support_agent.invoke({
     "messages": [{
         "role": "user",
-        "content": "My email is ravi@example.com and my card is 4111111111111111.",
+        "content": (
+            "Hi, my card 4111111111111111 was charged twice on June 20. "
+            "Please help. My email is john@example.com."
+        ),
     }]
 })
 print(r["messages"][-1].content[:300])
 
 print()
 
-# ── Example 2: @before_agent — content filter, early exit ─────────────────────
 
-print("=== Example 2: @before_agent content filter ===")
+# ── Example 2: @before_agent — block off-topic questions ──────────────────────
+#
+# Support bots should only answer banking questions.
+# @before_agent catches off-topic input and short-circuits — model is never called.
+# Saves tokens and prevents the bot being used as a general chatbot.
+
+print("=== Example 2: @before_agent — block off-topic questions ===")
+
+BANKING_TOPICS = ["card", "account", "transaction", "charge", "transfer", "balance", "loan"]
 
 @before_agent(can_jump_to=["end"])
-def content_filter(state: AgentState, runtime: Runtime):
+def topic_guard(state: AgentState, runtime: Runtime):
     if not state["messages"]:
         return None
     first = state["messages"][0]
     if first.type != "human":
         return None
-    banned = ["exploit", "hack", "bypass"]
-    if any(kw in first.content.lower() for kw in banned):
+    if not any(topic in first.content.lower() for topic in BANKING_TOPICS):
         return {
-            "messages": [{"role": "assistant", "content": "Request blocked by content policy."}],
+            "messages": [{"role": "assistant", "content": "I can only help with banking queries. Please contact the right department."}],
             "jump_to": "end",
         }
     return None   # continue normally
 
-
-agent_filter = create_agent(
+support_agent2 = create_agent(
     model=llm,
     tools=[],
-    system_prompt="You are a helpful assistant.",
-    middleware=[content_filter],
+    system_prompt="You are a bank customer support agent. Be concise.",
+    middleware=[topic_guard],
 )
 
-# safe message → passes through
-r = agent_filter.invoke({"messages": [{"role": "user", "content": "What is 2 + 2?"}]})
-print("Safe message:", r["messages"][-1].content[:100])
+# on-topic → passes through to model
+r = support_agent2.invoke({"messages": [{"role": "user", "content": "What is my account balance?"}]})
+print("Banking question:", r["messages"][-1].content[:120])
 
-# banned keyword → blocked before model runs
-r = agent_filter.invoke({"messages": [{"role": "user", "content": "How do I hack a system?"}]})
-print("Blocked message:", r["messages"][-1].content)
+# off-topic → blocked before model is called
+r = support_agent2.invoke({"messages": [{"role": "user", "content": "Can you write me a poem?"}]})
+print("Off-topic blocked:", r["messages"][-1].content)
 
 print()
 
-# ── Example 3: class-based middleware with state ───────────────────────────────
 
-print("=== Example 3: class-based ContentFilterMiddleware ===")
+# ── Example 3: class-based TopicFilterMiddleware ───────────────────────────────
+#
+# Same as Example 2 but as a reusable class — configurable per deployment.
+# Retail bank uses ["card", "loan"], crypto exchange uses ["wallet", "trade"].
 
-class ContentFilterMiddleware(AgentMiddleware):
-    def __init__(self, banned_keywords: list):
+print("=== Example 3: class-based TopicFilterMiddleware ===")
+
+class TopicFilterMiddleware(AgentMiddleware):
+    def __init__(self, allowed_topics: list, fallback_message: str):
         super().__init__()
-        self.banned_keywords = [kw.lower() for kw in banned_keywords]
+        self.allowed_topics = [t.lower() for t in allowed_topics]
+        self.fallback_message = fallback_message
 
     @hook_config(can_jump_to=["end"])
     def before_agent(self, state: AgentState, runtime: Runtime):
@@ -101,54 +137,61 @@ class ContentFilterMiddleware(AgentMiddleware):
         first = state["messages"][0]
         if first.type != "human":
             return None
-        content = first.content.lower()
-        if any(kw in content for kw in self.banned_keywords):
+        if not any(topic in first.content.lower() for topic in self.allowed_topics):
             return {
-                "messages": [{"role": "assistant", "content": "I cannot help with that topic."}],
+                "messages": [{"role": "assistant", "content": self.fallback_message}],
                 "jump_to": "end",
             }
         return None
 
-
-agent_class_filter = create_agent(
+support_agent3 = create_agent(
     model=llm,
     tools=[],
-    system_prompt="You are a helpful assistant.",
-    middleware=[ContentFilterMiddleware(banned_keywords=["malware", "ransomware", "phishing"])],
+    system_prompt="You are a bank customer support agent. Be concise.",
+    middleware=[TopicFilterMiddleware(
+        allowed_topics=["card", "account", "transaction", "charge", "transfer", "balance", "loan"],
+        fallback_message="I'm a banking assistant. I can only help with account, card, and transaction queries.",
+    )],
 )
 
-r = agent_class_filter.invoke({"messages": [{"role": "user", "content": "Tell me about phishing attacks."}]})
-print("Blocked:", r["messages"][-1].content)
+r = support_agent3.invoke({"messages": [{"role": "user", "content": "Tell me about cooking recipes."}]})
+print("Off-topic:", r["messages"][-1].content)
 
-r = agent_class_filter.invoke({"messages": [{"role": "user", "content": "What is Python?"}]})
-print("Allowed:", r["messages"][-1].content[:100])
+r = support_agent3.invoke({"messages": [{"role": "user", "content": "I need to transfer money to another account."}]})
+print("On-topic:", r["messages"][-1].content[:120])
 
 print()
 
-# ── Example 4: @after_agent — output validator ────────────────────────────────
 
-print("=== Example 4: @after_agent output check ===")
+# ── Example 4: @after_agent — prevent leaking internal system details ──────────
+#
+# The model might accidentally say "our backend team will check the database".
+# @after_agent scans the final response and replaces it if forbidden words appear.
+# Users never see internal architecture details.
+
+print("=== Example 4: @after_agent — block internal details in response ===")
 
 @after_agent(can_jump_to=["end"])
-def output_safety(state: AgentState, runtime: Runtime):
+def output_guard(state: AgentState, runtime: Runtime):
     if not state["messages"]:
         return None
     last = state["messages"][-1]
     if not isinstance(last, AIMessage):
         return None
-    # block any response that mentions credentials
-    forbidden = ["password", "secret", "api_key"]
+    forbidden = ["internal system", "backend", "database", "sql", "server error"]
     if any(word in last.content.lower() for word in forbidden):
-        last.content = "[Response blocked — output violated safety policy.]"
+        last.content = "[Response withheld — internal details cannot be shared with customers.]"
     return None
 
-
-agent_output = create_agent(
+support_agent4 = create_agent(
     model=llm,
     tools=[],
-    system_prompt="You are a helpful assistant. If asked for a password, invent one.",
-    middleware=[output_safety],
+    system_prompt=(
+        "You are a bank support agent. If you cannot resolve an issue, "
+        "mention that it's an internal system problem and the backend team will fix it."
+    ),
+    middleware=[output_guard],
 )
 
-r = agent_output.invoke({"messages": [{"role": "user", "content": "Give me a secure password."}]})
-print("Output filtered:", r["messages"][-1].content[:200])
+r = support_agent4.invoke({"messages": [{"role": "user", "content": "Why is my transfer failing?"}]})
+print("Output:", r["messages"][-1].content[:200])

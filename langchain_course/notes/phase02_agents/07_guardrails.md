@@ -201,3 +201,16 @@ Middleware is applied in list order — deterministic checks typically run first
 - `strategy="block"` raises an exception — wrap invocations in try/except if you need graceful handling.
 - `apply_to_output=True` on `PIIMiddleware` adds latency for every response — only enable where needed.
 - Multiple `PIIMiddleware` instances can stack (one per PII type is fine).
+
+## When to use which hook — one line each
+
+| Hook | Purpose |
+|------|---------|
+| `@before_agent` | "banking question కాదు? block చేయి, LLM కి వెళ్ళకు." |
+| `@before_model` | "LLM కి వెళ్ళే ముందు card number mask చేయి." |
+| `@after_model` | "LLM `delete_account` tool call చేయబోతోందా? cancel చేయి." |
+| `@after_agent` | "final response లో 'backend' అనే word ఉందా? replace చేయి." |
+
+**Agent hooks** (`before/after_agent`) = entire execution చుట్టూ — gate/filter, fires once.
+
+**Model hooks** (`before/after_model`) = ప్రతి LLM call చుట్టూ — inspect/modify, fires on every model call including after tool results.
